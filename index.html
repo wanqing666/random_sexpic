@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>随机涩涩神图</title>
+    <style>
+        :root {
+            --primary-color: #FF4D8A;
+            --bg-color: #f5f5f5;
+            --card-color: white;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-color: #1A1A1A;
+                --card-color: #2D2D2D;
+            }
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            margin: 0;
+            padding: 10px;
+            background: var(--bg-color);
+            touch-action: pan-y;
+            -webkit-tap-highlight-color: transparent;
+            transition: background 0.3s;
+        }
+        #app {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .card {
+            background: var(--card-color);
+            border-radius: 12px;
+            padding: 15px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+            margin-top: 15px;
+            transition: background 0.3s;
+        }
+        #image-container {
+            position: relative;
+            overflow: hidden;
+            border-radius: 8px;
+        }
+        #random-image {
+            width: 100%;
+            display: block;
+            transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        #progress-bar {
+            height: 3px;
+            background: var(--primary-color);
+            width: 0%;
+            transition: width 0.3s;
+        }
+        #pid-display {
+            display: block;
+            margin: 10px 0;
+            color: #888;
+            font-size: 14px;
+            text-align: center;
+        }
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            margin-top: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            position: relative;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 0 #d43c6d,
+                        0 5px 10px rgba(0,0,0,0.1);
+        }
+        .btn:active {
+            transform: translateY(4px);
+            box-shadow: 0 1px 0 #d43c6d,
+                        0 2px 5px rgba(0,0,0,0.1);
+        }
+        .swipe-hint {
+            text-align: center;
+            color: #AAA;
+            font-size: 13px;
+            margin-top: 10px;
+        }
+        .dark-mode-toggle {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--primary-color);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <h1>随机涩涩神图</h1>
+        <div class="card">
+            <div id="progress-bar"></div>
+            <div id="image-container">
+                <img id="random-image" 
+                     onclick="loadRandomImage()"
+                     ondragstart="return false;">
+            </div>
+            <span id="pid-display">加载中...</span>
+        </div>
+        
+        <button class="btn" onclick="loadRandomImage()">换一张</button>
+        <p class="swipe-hint">← 左右滑动切换 →</p>
+        
+        <div class="dark-mode-toggle" onclick="toggleDarkMode()">
+            ☀️
+        </div>
+    </div>
+
+    <!-- 引入图片数据库 -->
+    <script src="images.js"></script>
+    
+    <script>
+        // 状态管理
+        let currentImage = null;
+        let startX = 0;
+        let isSwiping = false;
+        let isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            updateDarkMode();
+            loadRandomImage();
+            setupTouchEvents();
+            setupLongPress();
+        });
+
+        // 核心功能
+        function loadRandomImage() {
+            if (imageData.length === 0) {
+                document.getElementById('pid-display').textContent = '没有可用的图片';
+                return;
+            }
+            
+            const imgEl = document.getElementById('random-image');
+            const progressBar = document.getElementById('progress-bar');
+            
+            // 显示加载状态
+            imgEl.style.opacity = '0.5';
+            progressBar.style.width = '30%';
+            
+            // 智能选择未显示的图片
+            const availableImages = imageData.filter(img => 
+                !currentImage || img.pid !== currentImage.pid
+            );
+            currentImage = availableImages[Math.floor(Math.random() * availableImages.length)] || imageData[0];
+            
+            // 预加载
+            const tempImg = new Image();
+            tempImg.onload = () => {
+                imgEl.src = currentImage.url;
+                imgEl.style.opacity = '1';
+                progressBar.style.width = '100%';
+                setTimeout(() => progressBar.style.width = '0%', 300);
+                
+                document.getElementById('pid-display').textContent = `PID: ${currentImage.pid}`;
+            };
+            
+            tempImg.onerror = () => {
+                progressBar.style.width = '0%';
+                document.getElementById('pid-display').textContent = '加载失败，点击重试';
+                imgEl.onclick = loadRandomImage;
+            };
+            
+            tempImg.src = currentImage.url;
+        }
+
+        // 手势交互（优化滑动流畅度）
+        function setupTouchEvents() {
+            const container = document.getElementById('image-container');
+            const imgEl = document.getElementById('random-image');
+            
+            container.addEventListener('touchstart', (e) => {
+                startX = e.touches[0].clientX;
+                isSwiping = true;
+                imgEl.style.transition = 'none'; // 滑动时禁用动画
+            }, { passive: true });
+            
+            container.addEventListener('touchmove', (e) => {
+                if (!isSwiping) return;
+                const diffX = e.touches[0].clientX - startX;
+                imgEl.style.transform = `translateX(${diffX}px)`;
+            }, { passive: true });
+            
+            container.addEventListener('touchend', (e) => {
+                if (!isSwiping) return;
+                isSwiping = false;
+                imgEl.style.transition = 'transform 0.4s cubic-bezier(0.22, 1, 0.36, 1)';
+                
+                const diffX = e.changedTouches[0].clientX - startX;
+                if (Math.abs(diffX) > 50) {
+                    loadRandomImage();
+                }
+                imgEl.style.transform = 'translateX(0)';
+            }, { passive: true });
+        }
+
+        // 长按保存
+        function setupLongPress() {
+            let pressTimer;
+            const imgEl = document.getElementById('random-image');
+            
+            imgEl.addEventListener('touchstart', () => {
+                pressTimer = setTimeout(() => {
+                    saveCurrentImage();
+                }, 800);
+            }, { passive: true });
+            
+            imgEl.addEventListener('touchend', () => {
+                clearTimeout(pressTimer);
+            }, { passive: true });
+        }
+
+        function saveCurrentImage() {
+            if (!currentImage) return;
+            
+            const link = document.createElement('a');
+            link.href = currentImage.url;
+            link.download = `Pixiv_${currentImage.pid}.jpg`;
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // 提示保存成功
+            const pidDisplay = document.getElementById('pid-display');
+            const originalText = pidDisplay.textContent;
+            pidDisplay.textContent = '✓ 已保存到相册';
+            setTimeout(() => pidDisplay.textContent = originalText, 2000);
+        }
+
+        // 黑暗模式切换
+        function toggleDarkMode() {
+            isDarkMode = !isDarkMode;
+            localStorage.setItem('darkMode', isDarkMode);
+            updateDarkMode();
+        }
+
+        function updateDarkMode() {
+            const toggleBtn = document.querySelector('.dark-mode-toggle');
+            if (isDarkMode) {
+                document.documentElement.style.setProperty('--bg-color', '#1A1A1A');
+                document.documentElement.style.setProperty('--card-color', '#2D2D2D');
+                toggleBtn.textContent = '🌙';
+            } else {
+                document.documentElement.style.setProperty('--bg-color', '#f5f5f5');
+                document.documentElement.style.setProperty('--card-color', 'white');
+                toggleBtn.textContent = '☀️';
+            }
+        }
+    </script>
+</body>
+</html>
