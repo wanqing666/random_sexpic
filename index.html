@@ -41,6 +41,7 @@
             position: relative;
             overflow: hidden;
             border-radius: 8px;
+            touch-action: pan-y;
         }
         #random-image {
             width: 100%;
@@ -109,6 +110,84 @@
             margin-top: 5px;
             font-weight: bold;
         }
+        /* 新增的保存动画样式 */
+        .save-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+        .save-overlay.active {
+            opacity: 1;
+        }
+        .save-progress {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: 3px solid rgba(255,255,255,0.2);
+            border-top-color: white;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+        .save-message {
+            color: white;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .save-success {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: #4CAF50;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 15px;
+            opacity: 0;
+            transform: scale(0.8);
+            transition: all 0.3s;
+        }
+        .save-success.active {
+            opacity: 1;
+            transform: scale(1);
+        }
+        .save-success::after {
+            content: "✓";
+            color: white;
+            font-size: 30px;
+        }
+        /* 放大图片的样式 */
+        .image-zoom {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            cursor: zoom-out;
+        }
+        .image-zoom img {
+            max-width: 90%;
+            max-height: 90%;
+            object-fit: contain;
+        }
     </style>
 </head>
 <body>
@@ -118,7 +197,7 @@
             <div id="progress-bar"></div>
             <div id="image-container">
                 <img id="random-image" 
-                     onclick="loadRandomImage()"
+                     ondblclick="zoomImage()"
                      ondragstart="return false;">
             </div>
             <span id="pid-display">加载中...</span>
@@ -127,6 +206,14 @@
         
         <button class="btn" onclick="loadRandomImage()">换一张</button>
         <p class="swipe-hint">← 左右滑动切换 →</p>
+        <p class="swipe-hint">长按保存图片</p>
+        
+        <!-- 新增的保存动画元素 -->
+        <div class="save-overlay" id="save-overlay">
+            <div class="save-progress" id="save-progress"></div>
+            <div class="save-success" id="save-success"></div>
+            <div class="save-message" id="save-message">保存中...</div>
+        </div>
         
         <div class="dark-mode-toggle" onclick="toggleDarkMode()">
             ☀️
@@ -150,6 +237,8 @@
         let inactivityTimer = null;
         let countdownInterval = null;
         let lastActivityTime = Date.now();
+        let longPressTimer = null;
+        let isLongPress = false;
 
         // ===================== 图片处理 =====================
         function parseImageData(imgArray) {
@@ -267,19 +356,48 @@
                 isSwiping = true;
                 imgEl.style.transition = 'none';
                 resetInactivityTimer();
+                
+                // 设置长按计时器
+                isLongPress = false;
+                longPressTimer = setTimeout(function() {
+                    isLongPress = true;
+                    showSaveAnimation();
+                }, 800);
             }, { passive: true });
             
             container.addEventListener('touchmove', function(e) {
                 if (!isSwiping) return;
+                
+                // 如果已经触发了长按，则取消滑动
+                if (isLongPress) {
+                    isSwiping = false;
+                    return;
+                }
+                
                 const diffX = e.touches[0].clientX - startX;
                 imgEl.style.transform = `translateX(${diffX}px)`;
                 resetInactivityTimer();
+                
+                // 如果滑动距离超过一定值，取消长按
+                if (Math.abs(diffX) > 10) {
+                    clearTimeout(longPressTimer);
+                }
             }, { passive: true });
             
             container.addEventListener('touchend', function(e) {
                 if (!isSwiping) return;
                 isSwiping = false;
                 imgEl.style.transition = 'transform 0.4s cubic-bezier(0.22, 1, 0.36, 1)';
+                
+                // 清除长按计时器
+                clearTimeout(longPressTimer);
+                
+                // 如果已经触发了长按，则不再处理滑动
+                if (isLongPress) {
+                    isLongPress = false;
+                    imgEl.style.transform = 'translateX(0)';
+                    return;
+                }
                 
                 const diffX = e.changedTouches[0].clientX - startX;
                 if (Math.abs(diffX) > 50) {
@@ -290,21 +408,33 @@
             }, { passive: true });
         }
 
-        function setupLongPress() {
-            let pressTimer;
-            const imgEl = document.getElementById('random-image');
+        function showSaveAnimation() {
+            const overlay = document.getElementById('save-overlay');
+            const progress = document.getElementById('save-progress');
+            const success = document.getElementById('save-success');
+            const message = document.getElementById('save-message');
             
-            imgEl.addEventListener('touchstart', function() {
-                pressTimer = setTimeout(function() {
-                    saveCurrentImage();
-                }, 800);
-                resetInactivityTimer();
-            }, { passive: true });
+            // 显示保存动画
+            overlay.classList.add('active');
+            progress.style.display = 'block';
+            success.classList.remove('active');
+            message.textContent = '保存中...';
             
-            imgEl.addEventListener('touchend', function() {
-                clearTimeout(pressTimer);
-                resetInactivityTimer();
-            }, { passive: true });
+            // 模拟保存过程
+            setTimeout(() => {
+                // 隐藏进度条，显示成功图标
+                progress.style.display = 'none';
+                success.classList.add('active');
+                message.textContent = '保存成功';
+                
+                // 实际保存图片
+                saveCurrentImage();
+                
+                // 2秒后隐藏覆盖层
+                setTimeout(() => {
+                    overlay.classList.remove('active');
+                }, 2000);
+            }, 1000);
         }
 
         function saveCurrentImage() {
@@ -318,10 +448,24 @@
             link.click();
             document.body.removeChild(link);
             
-            const pidDisplay = document.getElementById('pid-display');
-            const originalText = pidDisplay.textContent;
-            pidDisplay.textContent = '✓ 已保存到相册';
-            setTimeout(() => pidDisplay.textContent = originalText, 2000);
+            resetInactivityTimer();
+        }
+
+        // ===================== 图片放大功能 =====================
+        function zoomImage() {
+            if (!currentImage) return;
+            
+            const zoomContainer = document.createElement('div');
+            zoomContainer.className = 'image-zoom';
+            zoomContainer.onclick = function() {
+                document.body.removeChild(zoomContainer);
+            };
+            
+            const zoomImg = document.createElement('img');
+            zoomImg.src = currentImage.url;
+            
+            zoomContainer.appendChild(zoomImg);
+            document.body.appendChild(zoomContainer);
             
             resetInactivityTimer();
         }
@@ -364,9 +508,11 @@
             
             updateDarkMode();
             setupTouchEvents();
-            setupLongPress();
             setupActivityListeners();
             loadRandomImage();
+            
+            // 双击放大事件
+            document.getElementById('random-image').addEventListener('dblclick', zoomImage);
         });
     </script>
 </body>
