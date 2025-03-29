@@ -102,23 +102,6 @@
             box-shadow: 0 2px 5px rgba(0,0,0,0.2);
             z-index: 100;
         }
-        .auto-load-indicator {
-            position: absolute;
-            bottom: 10px;
-            left: 10px;
-            right: 10px;
-            height: 3px;
-            background: rgba(255,255,255,0.3);
-            border-radius: 3px;
-            overflow: hidden;
-            display: none;
-        }
-        .auto-load-progress {
-            height: 100%;
-            width: 0%;
-            background: var(--primary-color);
-            transition: width linear;
-        }
     </style>
 </head>
 <body>
@@ -130,9 +113,6 @@
                 <img id="random-image" 
                      onclick="loadRandomImage()"
                      ondragstart="return false;">
-                <div class="auto-load-indicator" id="auto-load-indicator">
-                    <div class="auto-load-progress" id="auto-load-progress"></div>
-                </div>
             </div>
             <span id="pid-display">加载中...</span>
         </div>
@@ -154,8 +134,6 @@
         let startX = 0;
         let isSwiping = false;
         let isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        let autoLoadTimer = null;
-        let lastInteractionTime = Date.now();
 
         // 初始化
         document.addEventListener('DOMContentLoaded', () => {
@@ -163,13 +141,10 @@
             loadRandomImage();
             setupTouchEvents();
             setupLongPress();
-            setupActivityMonitoring();
         });
 
         // 核心功能
         function loadRandomImage() {
-            resetAutoLoadTimer(); // 重置自动加载计时器
-            
             if (imageData.length === 0) {
                 document.getElementById('pid-display').textContent = '没有可用的图片';
                 return;
@@ -197,9 +172,6 @@
                 setTimeout(() => progressBar.style.width = '0%', 300);
                 
                 document.getElementById('pid-display').textContent = `PID: ${currentImage.pid}`;
-                
-                // 图片加载完成后启动自动加载计时器
-                startAutoLoadTimer();
             };
             
             tempImg.onerror = () => {
@@ -209,53 +181,6 @@
             };
             
             tempImg.src = currentImage.url;
-        }
-
-        // 自动加载功能
-        function startAutoLoadTimer() {
-            resetAutoLoadTimer(); // 先清除现有的计时器
-            
-            const indicator = document.getElementById('auto-load-indicator');
-            const progress = document.getElementById('auto-load-progress');
-            
-            indicator.style.display = 'block';
-            progress.style.transition = 'width 10s linear';
-            progress.style.width = '100%';
-            
-            autoLoadTimer = setTimeout(() => {
-                loadRandomImage();
-            }, 10000); // 10秒后自动加载
-        }
-
-        function resetAutoLoadTimer() {
-            if (autoLoadTimer) {
-                clearTimeout(autoLoadTimer);
-                autoLoadTimer = null;
-            }
-            
-            const indicator = document.getElementById('auto-load-indicator');
-            const progress = document.getElementById('auto-load-progress');
-            
-            indicator.style.display = 'none';
-            progress.style.transition = 'none';
-            progress.style.width = '0%';
-        }
-
-        // 用户活动监测
-        function setupActivityMonitoring() {
-            const events = ['mousedown', 'mousemove', 'touchstart', 'touchmove', 'click', 'scroll'];
-            
-            events.forEach(event => {
-                document.addEventListener(event, () => {
-                    lastInteractionTime = Date.now();
-                    resetAutoLoadTimer();
-                    
-                    // 如果图片已经加载完成，重新启动计时器
-                    if (document.getElementById('random-image').complete) {
-                        startAutoLoadTimer();
-                    }
-                }, { passive: true });
-            });
         }
 
         // 手势交互（优化滑动流畅度）
@@ -299,4 +224,48 @@
                 }, 800);
             }, { passive: true });
             
-            imgEl.addEventList
+            imgEl.addEventListener('touchend', () => {
+                clearTimeout(pressTimer);
+            }, { passive: true });
+        }
+
+        function saveCurrentImage() {
+            if (!currentImage) return;
+            
+            const link = document.createElement('a');
+            link.href = currentImage.url;
+            link.download = `Pixiv_${currentImage.pid}.jpg`;
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // 提示保存成功
+            const pidDisplay = document.getElementById('pid-display');
+            const originalText = pidDisplay.textContent;
+            pidDisplay.textContent = '✓ 已保存到相册';
+            setTimeout(() => pidDisplay.textContent = originalText, 2000);
+        }
+
+        // 黑暗模式切换
+        function toggleDarkMode() {
+            isDarkMode = !isDarkMode;
+            localStorage.setItem('darkMode', isDarkMode);
+            updateDarkMode();
+        }
+
+        function updateDarkMode() {
+            const toggleBtn = document.querySelector('.dark-mode-toggle');
+            if (isDarkMode) {
+                document.documentElement.style.setProperty('--bg-color', '#1A1A1A');
+                document.documentElement.style.setProperty('--card-color', '#2D2D2D');
+                toggleBtn.textContent = '🌙';
+            } else {
+                document.documentElement.style.setProperty('--bg-color', '#f5f5f5');
+                document.documentElement.style.setProperty('--card-color', 'white');
+                toggleBtn.textContent = '☀️';
+            }
+        }
+    </script>
+</body>
+</html>
