@@ -104,9 +104,10 @@
         }
         .auto-switch-info {
             text-align: center;
-            color: #AAA;
-            font-size: 12px;
+            color: var(--primary-color);
+            font-size: 13px;
             margin-top: 5px;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -132,162 +133,150 @@
         </div>
     </div>
 
-    <!-- 保持images.js引用（需确保该文件存在并导出imageData变量） -->
+    <!-- 外部 images.js 文件 -->
     <script src="images.js"></script>
 
     <script>
+        // ===================== 配置 =====================
+        const BASE_URL = "https://i.pixiv.re/img-original/img/"; // 请修改为您的实际基础路径
+        const INACTIVITY_INTERVAL = 10000; // 10秒无操作切换
+
         // ===================== 状态管理 =====================
         let currentImage = null;
+        let nextImage = null;
         let startX = 0;
         let isSwiping = false;
         let isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        
-        // ===================== 计时器优化部分 =====================
-        let autoSwitchTimer = null;
-        let preloadedNextImage = null;
-        let lastInteractionTime = Date.now();
-        const AUTO_SWITCH_INTERVAL = 10000; // 10秒自动切换
+        let inactivityTimer = null;
+        let countdownInterval = null;
+        let lastActivityTime = Date.now();
 
-        function clearAutoSwitchTimer() {
-            if (autoSwitchTimer) {
-                clearTimeout(autoSwitchTimer);
-                autoSwitchTimer = null;
-            }
+        // ===================== 图片处理 =====================
+        function parseImageData(imgArray) {
+            // 将 [pid, filename] 转换为 {pid, url} 对象
+            return {
+                pid: imgArray[0],
+                url: BASE_URL + imgArray[1] // 自动拼接完整URL
+            };
         }
 
-        function preloadNextImage() {
-            return new Promise((resolve) => {
-                if (!window.imageData || window.imageData.length === 0) {
-                    console.warn("[预加载] 无有效图片数据");
-                    return resolve(false);
-                }
-
-                const availableImages = window.imageData.filter(img => 
-                    !currentImage || img.pid !== currentImage.pid
-                );
-                if (availableImages.length === 0) {
-                    console.warn("[预加载] 无更多可选图片");
-                    return resolve(false);
-                }
-
-                const nextImage = availableImages[Math.floor(Math.random() * availableImages.length)];
-                console.log("[预加载] 正在加载:", nextImage.pid);
-
-                preloadedNextImage = new Image();
-                preloadedNextImage.onload = () => {
-                    console.log("[预加载] 成功:", nextImage.pid);
-                    resolve(true);
-                };
-                preloadedNextImage.onerror = () => {
-                    console.warn("[预加载] 失败:", nextImage.url);
-                    resolve(false);
-                };
-                preloadedNextImage.src = nextImage.url;
-            });
-        }
-
-        function startAutoSwitch() {
-            clearAutoSwitchTimer();
-            
-            preloadNextImage().then((success) => {
-                if (success && currentImage && preloadedNextImage?.complete) {
-                    const elapsed = Date.now() - lastInteractionTime;
-                    const remaining = Math.max(1000, AUTO_SWITCH_INTERVAL - elapsed);
-                    
-                    autoSwitchTimer = setTimeout(() => {
-                        if (!preloadedNextImage?.complete) {
-                            console.log("[自动切换] 取消：预加载未完成");
-                            return;
-                        }
-                        
-                        console.log("[自动切换] 执行切换");
-                        const imgEl = document.getElementById('random-image');
-                        imgEl.src = preloadedNextImage.src;
-                        currentImage = window.imageData.find(img => img.url === preloadedNextImage.src);
-                        document.getElementById('pid-display').textContent = `PID: ${currentImage?.pid || "未知"}`;
-                        
-                        lastInteractionTime = Date.now();
-                        startAutoSwitch(); // 递归调用
-                    }, remaining);
-                    
-                    updateAutoSwitchInfo(remaining);
-                } else {
-                    console.log("[自动切换] 条件未满足，暂停计时");
-                }
-            });
-        }
-
-        function updateAutoSwitchInfo(ms) {
-            const el = document.getElementById('auto-switch-info');
-            if (el) {
-                el.textContent = `${Math.ceil(ms / 1000)}秒后自动切换`;
-            }
-        }
-
-        // ===================== 原有功能（完全保留） =====================
+        // ===================== 核心功能 =====================
         function loadRandomImage() {
-            if (!window.imageData || window.imageData.length === 0) {
-                document.getElementById('pid-display').textContent = '没有可用的图片';
-                console.error("imageData未定义或为空");
-                return;
-            }
+            // 清除现有计时器
+            clearTimeout(inactivityTimer);
+            clearInterval(countdownInterval);
             
             const imgEl = document.getElementById('random-image');
             const progressBar = document.getElementById('progress-bar');
             
+            // 显示加载状态
             imgEl.style.opacity = '0.5';
-            progressBar.style.width = '30%';
+            progressBar.style.width = '0%';
             
-            const availableImages = window.imageData.filter(img => 
-                !currentImage || img.pid !== currentImage.pid
-            );
-            currentImage = availableImages[Math.floor(Math.random() * availableImages.length)] || window.imageData[0];
+            // 获取新图片（优先使用预加载的nextImage）
+            currentImage = nextImage || getRandomImage(currentImage?.pid);
             
-            const tempImg = new Image();
-            tempImg.onload = () => {
-                imgEl.src = currentImage.url;
+            // 如果没有可用图片
+            if (!currentImage) {
+                document.getElementById('pid-display').textContent = '没有可用的图片';
+                return;
+            }
+            
+            // 预加载下一张
+            nextImage = getRandomImage(currentImage.pid);
+            
+            // 加载图片
+            const img = new Image();
+            img.onload = function() {
+                imgEl.src = this.src;
                 imgEl.style.opacity = '1';
                 progressBar.style.width = '100%';
                 setTimeout(() => progressBar.style.width = '0%', 300);
-                
                 document.getElementById('pid-display').textContent = `PID: ${currentImage.pid}`;
                 
-                // 使用优化后的预加载逻辑
-                preloadNextImage().then(() => {
-                    lastInteractionTime = Date.now();
-                    startAutoSwitch();
-                });
+                // 重置无操作计时器
+                resetInactivityTimer();
             };
             
-            tempImg.onerror = () => {
+            img.onerror = function() {
                 progressBar.style.width = '0%';
                 document.getElementById('pid-display').textContent = '加载失败，点击重试';
-                console.error("图片加载失败:", currentImage.url);
             };
             
-            tempImg.src = currentImage.url;
+            img.src = currentImage.url;
         }
 
+        function getRandomImage(excludePid) {
+            if (!imageData || imageData.length === 0) return null;
+            
+            // 过滤可用图片
+            const available = excludePid 
+                ? imageData.filter(img => img[0] !== excludePid)
+                : imageData;
+            
+            return available.length > 0 
+                ? parseImageData(available[Math.floor(Math.random() * available.length)])
+                : null;
+        }
+
+        // ===================== 自动切换系统 =====================
+        function resetInactivityTimer() {
+            // 清除现有计时器
+            clearTimeout(inactivityTimer);
+            clearInterval(countdownInterval);
+            
+            // 记录活动时间
+            lastActivityTime = Date.now();
+            
+            // 启动倒计时显示
+            startCountdown();
+            
+            // 设置无操作检测
+            inactivityTimer = setTimeout(() => {
+                if (nextImage) loadRandomImage();
+            }, INACTIVITY_INTERVAL);
+        }
+
+        function startCountdown() {
+            clearInterval(countdownInterval);
+            const countdownEl = document.getElementById('auto-switch-info');
+            
+            // 立即更新显示
+            updateDisplay();
+            
+            // 每秒更新倒计时
+            countdownInterval = setInterval(updateDisplay, 1000);
+            
+            function updateDisplay() {
+                const remaining = Math.max(0, INACTIVITY_INTERVAL - (Date.now() - lastActivityTime));
+                countdownEl.textContent = `${Math.ceil(remaining/1000)}秒后自动切换`;
+                
+                if (remaining <= 0) {
+                    clearInterval(countdownInterval);
+                }
+            }
+        }
+
+        // ===================== 交互功能 =====================
         function setupTouchEvents() {
             const container = document.getElementById('image-container');
             const imgEl = document.getElementById('random-image');
             
-            container.addEventListener('touchstart', (e) => {
+            container.addEventListener('touchstart', function(e) {
                 startX = e.touches[0].clientX;
                 isSwiping = true;
                 imgEl.style.transition = 'none';
-                lastInteractionTime = Date.now();
-                clearAutoSwitchTimer();
+                resetInactivityTimer();
             }, { passive: true });
             
-            container.addEventListener('touchmove', (e) => {
+            container.addEventListener('touchmove', function(e) {
                 if (!isSwiping) return;
                 const diffX = e.touches[0].clientX - startX;
                 imgEl.style.transform = `translateX(${diffX}px)`;
-                lastInteractionTime = Date.now();
+                resetInactivityTimer();
             }, { passive: true });
             
-            container.addEventListener('touchend', (e) => {
+            container.addEventListener('touchend', function(e) {
                 if (!isSwiping) return;
                 isSwiping = false;
                 imgEl.style.transition = 'transform 0.4s cubic-bezier(0.22, 1, 0.36, 1)';
@@ -297,8 +286,7 @@
                     loadRandomImage();
                 }
                 imgEl.style.transform = 'translateX(0)';
-                lastInteractionTime = Date.now();
-                startAutoSwitch();
+                resetInactivityTimer();
             }, { passive: true });
         }
 
@@ -306,18 +294,16 @@
             let pressTimer;
             const imgEl = document.getElementById('random-image');
             
-            imgEl.addEventListener('touchstart', () => {
-                pressTimer = setTimeout(() => {
+            imgEl.addEventListener('touchstart', function() {
+                pressTimer = setTimeout(function() {
                     saveCurrentImage();
                 }, 800);
-                lastInteractionTime = Date.now();
-                clearAutoSwitchTimer();
+                resetInactivityTimer();
             }, { passive: true });
             
-            imgEl.addEventListener('touchend', () => {
+            imgEl.addEventListener('touchend', function() {
                 clearTimeout(pressTimer);
-                lastInteractionTime = Date.now();
-                startAutoSwitch();
+                resetInactivityTimer();
             }, { passive: true });
         }
 
@@ -337,17 +323,15 @@
             pidDisplay.textContent = '✓ 已保存到相册';
             setTimeout(() => pidDisplay.textContent = originalText, 2000);
             
-            lastInteractionTime = Date.now();
-            startAutoSwitch();
+            resetInactivityTimer();
         }
 
+        // ===================== 辅助功能 =====================
         function toggleDarkMode() {
             isDarkMode = !isDarkMode;
             localStorage.setItem('darkMode', isDarkMode);
             updateDarkMode();
-            
-            lastInteractionTime = Date.now();
-            startAutoSwitch();
+            resetInactivityTimer();
         }
 
         function updateDarkMode() {
@@ -363,27 +347,26 @@
             }
         }
 
+        function setupActivityListeners() {
+            const events = ['mousedown', 'mousemove', 'keydown', 'touchstart', 'touchmove', 'click', 'scroll'];
+            events.forEach(event => {
+                document.addEventListener(event, resetInactivityTimer, { passive: true });
+            });
+        }
+
         // ===================== 初始化 =====================
-        document.addEventListener('DOMContentLoaded', () => {
-            // 确保imageData已加载
-            if (!window.imageData) {
-                console.error("imageData未定义，请检查images.js");
-                document.getElementById('pid-display').textContent = '数据加载失败';
+        document.addEventListener('DOMContentLoaded', function() {
+            // 检查是否加载了imageData
+            if (typeof imageData === 'undefined' || imageData.length === 0) {
+                document.getElementById('pid-display').textContent = '没有可用的图片数据';
                 return;
             }
-
+            
             updateDarkMode();
-            loadRandomImage();
             setupTouchEvents();
             setupLongPress();
-            
-            // 监听用户活动
-            ['mousedown', 'mousemove', 'keydown', 'touchstart', 'touchmove', 'click', 'scroll'].forEach(event => {
-                document.addEventListener(event, () => {
-                    lastInteractionTime = Date.now();
-                    startAutoSwitch();
-                }, { passive: true });
-            });
+            setupActivityListeners();
+            loadRandomImage();
         });
     </script>
 </body>
