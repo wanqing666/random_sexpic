@@ -239,6 +239,7 @@
         let lastActivityTime = Date.now();
         let longPressTimer = null;
         let isLongPress = false;
+        let isImageLoading = false;
 
         // ===================== 图片处理 =====================
         function parseImageData(imgArray) {
@@ -261,6 +262,8 @@
             // 显示加载状态
             imgEl.style.opacity = '0.5';
             progressBar.style.width = '0%';
+            isImageLoading = true;
+            document.getElementById('auto-switch-info').textContent = '图片加载中...';
             
             // 获取新图片（优先使用预加载的nextImage）
             currentImage = nextImage || getRandomImage(currentImage?.pid);
@@ -268,6 +271,7 @@
             // 如果没有可用图片
             if (!currentImage) {
                 document.getElementById('pid-display').textContent = '没有可用的图片';
+                isImageLoading = false;
                 return;
             }
             
@@ -282,6 +286,7 @@
                 progressBar.style.width = '100%';
                 setTimeout(() => progressBar.style.width = '0%', 300);
                 document.getElementById('pid-display').textContent = `PID: ${currentImage.pid}`;
+                isImageLoading = false;
                 
                 // 重置无操作计时器
                 resetInactivityTimer();
@@ -290,6 +295,8 @@
             img.onerror = function() {
                 progressBar.style.width = '0%';
                 document.getElementById('pid-display').textContent = '加载失败，点击重试';
+                document.getElementById('auto-switch-info').textContent = '加载失败';
+                isImageLoading = false;
             };
             
             img.src = currentImage.url;
@@ -310,6 +317,9 @@
 
         // ===================== 自动切换系统 =====================
         function resetInactivityTimer() {
+            // 如果图片正在加载，不重置计时器
+            if (isImageLoading) return;
+            
             // 清除现有计时器
             clearTimeout(inactivityTimer);
             clearInterval(countdownInterval);
@@ -337,6 +347,9 @@
             countdownInterval = setInterval(updateDisplay, 1000);
             
             function updateDisplay() {
+                // 如果图片正在加载，不更新倒计时
+                if (isImageLoading) return;
+                
                 const remaining = Math.max(0, INACTIVITY_INTERVAL - (Date.now() - lastActivityTime));
                 countdownEl.textContent = `${Math.ceil(remaining/1000)}秒后自动切换`;
                 
