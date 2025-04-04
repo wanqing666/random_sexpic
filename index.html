@@ -226,7 +226,7 @@
     <script>
         // ===================== 配置 =====================
         const BASE_URL = "https://i.pixiv.re/img-original/img/"; // 请修改为您的实际基础路径
-        const INACTIVITY_INTERVAL = 10000; // 10秒无操作切换
+        const INACTIVITY_INTERVAL = 15000; // n(1000=1)秒无操作切换
 
         // ===================== 状态管理 =====================
         let currentImage = null;
@@ -392,7 +392,7 @@
                 resetInactivityTimer();
                 
                 // 如果滑动距离超过一定值，取消长按
-                if (Math.abs(diffX) > 10) {
+                if (Math.abs(diffX) > 30) {
                     clearTimeout(longPressTimer);
                 }
             }, { passive: true });
