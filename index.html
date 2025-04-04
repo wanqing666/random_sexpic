@@ -143,6 +143,9 @@
             color: white;
             font-size: 16px;
             margin-top: 10px;
+            text-align: center;
+            max-width: 80%;
+            line-height: 1.4;
         }
         @keyframes spin {
             to { transform: rotate(360deg); }
@@ -206,7 +209,7 @@
         
         <button class="btn" onclick="loadRandomImage()">换一张</button>
         <p class="swipe-hint">← 左右滑动切换 →</p>
-        <p class="swipe-hint">长按保存图片</p>
+        <p class="swipe-hint">长按保存到相册/下载图片</p>
         
         <!-- 新增的保存动画元素 -->
         <div class="save-overlay" id="save-overlay">
@@ -431,17 +434,29 @@
             overlay.classList.add('active');
             progress.style.display = 'block';
             success.classList.remove('active');
-            message.textContent = '保存中...';
+            
+            // 根据平台显示不同的提示
+            if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
+                message.textContent = '准备保存到相册...';
+            } else {
+                message.textContent = '下载图片中...';
+            }
             
             // 模拟保存过程
             setTimeout(() => {
                 // 隐藏进度条，显示成功图标
                 progress.style.display = 'none';
                 success.classList.add('active');
-                message.textContent = '保存成功';
                 
                 // 实际保存图片
                 saveCurrentImage();
+                
+                // 根据平台显示不同的成功提示
+                if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
+                    message.textContent = '请在浏览器中选择"保存到相册"';
+                } else {
+                    message.textContent = '下载成功！';
+                }
                 
                 // 2秒后隐藏覆盖层
                 setTimeout(() => {
@@ -453,13 +468,69 @@
         function saveCurrentImage() {
             if (!currentImage) return;
             
-            const link = document.createElement('a');
-            link.href = currentImage.url;
-            link.download = `Pixiv_${currentImage.pid}.jpg`;
+            // 创建Canvas来确保图片可以正确保存（解决跨域问题）
+            const img = new Image();
+            img.crossOrigin = "Anonymous";
+            img.src = currentImage.url;
             
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            img.onload = function() {
+                // 创建Canvas
+                const canvas = document.createElement("canvas");
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, 0);
+                
+                // 转换为Blob对象
+                canvas.toBlob(function(blob) {
+                    if (!blob) return;
+                    
+                    // 创建下载链接
+                    const url = URL.createObjectURL(blob);
+                    
+                    // iOS设备处理方式
+                    if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
+                        // 创建临时链接让用户长按保存
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.target = '_blank';
+                        link.download = `Pixiv_${currentImage.pid}.jpg`;
+                        
+                        // 触发点击（在某些iOS版本可能无效）
+                        const event = new MouseEvent('click');
+                        link.dispatchEvent(event);
+                        
+                        // 备用方案：直接打开图片
+                        setTimeout(() => {
+                            window.open(url, '_blank');
+                        }, 100);
+                    } 
+                    // Android和其他设备处理方式
+                    else {
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = `Pixiv_${currentImage.pid}.jpg`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                    }
+                    
+                    // 释放内存
+                    setTimeout(() => {
+                        URL.revokeObjectURL(url);
+                    }, 1000);
+                }, 'image/jpeg', 0.9);
+            };
+            
+            img.onerror = function() {
+                // 如果Canvas方法失败，尝试直接下载
+                const link = document.createElement('a');
+                link.href = currentImage.url;
+                link.download = `Pixiv_${currentImage.pid}.jpg`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
             
             resetInactivityTimer();
         }
