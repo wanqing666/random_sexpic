@@ -493,23 +493,32 @@
             link.href = currentImage.url;
             link.download = `Pixiv_${currentImage.pid}.jpg`;
             
-            // 安卓设备直接触发下载
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            // 处理iOS设备的特殊情况
+            if (/(iPad|iPhone|iPod)/g.test(navigator.userAgent)) {
+                // iOS设备需要在新窗口打开
+                window.open(currentImage.url, '_blank');
+            } else {
+                // 其他设备直接触发下载
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
             
             resetInactivityTimer();
         }
 
-        // ===================== 图片放大功能 =====================
         function zoomImage() {
             if (!currentImage) return;
             
             const zoomContainer = document.createElement('div');
             zoomContainer.className = 'image-zoom';
+            
+            // 点击任意处关闭
             zoomContainer.onclick = function(e) {
-                if (e.target === zoomContainer) {
+                // 只有当点击的不是缩放按钮时才关闭
+                if (!e.target.classList.contains('zoom-btn')) {
                     document.body.removeChild(zoomContainer);
+                    currentScale = 1; // 重置缩放比例
                 }
             };
             
@@ -580,6 +589,11 @@
                     initialDistance = currentDistance;
                 }
             }, { passive: false });
+            
+            // 防止点击图片本身触发关闭
+            zoomedImage.onclick = function(e) {
+                e.stopPropagation();
+            };
             
             zoomContainer.appendChild(zoomedImage);
             zoomContainer.appendChild(zoomControls);
