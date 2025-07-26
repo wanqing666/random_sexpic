@@ -1,6 +1,6 @@
 // ===================== 配置 =====================
-const BASE_URL = "https://i.pixiv.re/img-original/img/"; // 请修改为您的实际基础路径
-const INACTIVITY_INTERVAL = 15000; // n(1000=1)秒无操作切换
+const BASE_URL = "https://i.pixiv.re/img-original/img/";
+const INACTIVITY_INTERVAL = 15000; // 默认15秒自动刷新
 
 // ===================== 状态管理 =====================
 let currentImage = null;
@@ -16,45 +16,104 @@ let isLongPress = false;
 let isImageLoading = false;
 let currentScale = 1;
 let zoomedImage = null;
+let autoRefreshEnabled = true;
+
+// ===================== 初始化 =====================
+document.addEventListener('DOMContentLoaded', function() {
+    // 检查是否加载了imageData
+    if (typeof imageData === 'undefined' || imageData.length === 0) {
+        document.getElementById('pid-display').textContent = '没有可用的图片数据';
+        return;
+    }
+    
+    // 检查本地存储的设置
+    const savedDarkMode = localStorage.getItem('darkMode');
+    if (savedDarkMode !== null) {
+        isDarkMode = savedDarkMode === 'true';
+    }
+    
+    const savedAutoRefresh = localStorage.getItem('autoRefresh');
+    if (savedAutoRefresh !== null) {
+        autoRefreshEnabled = savedAutoRefresh === 'true';
+        updateAutoRefreshToggle();
+    }
+    
+    updateDarkMode();
+    setupTouchEvents();
+    setupActivityListeners();
+    loadRandomImage();
+});
+
+// ===================== 设置菜单功能 =====================
+function toggleSettingsMenu() {
+    const menu = document.getElementById('settings-menu');
+    menu.classList.toggle('active');
+    resetInactivityTimer();
+}
+
+function toggleDarkMode() {
+    isDarkMode = !isDarkMode;
+    localStorage.setItem('darkMode', isDarkMode);
+    updateDarkMode();
+    resetInactivityTimer();
+}
+
+function toggleAutoRefresh() {
+    autoRefreshEnabled = !autoRefreshEnabled;
+    localStorage.setItem('autoRefresh', autoRefreshEnabled);
+    updateAutoRefreshToggle();
+    
+    if (autoRefreshEnabled) {
+        resetInactivityTimer();
+    } else {
+        clearTimeout(inactivityTimer);
+        clearInterval(countdownInterval);
+        document.getElementById('auto-switch-info').textContent = '自动刷新已关闭';
+    }
+}
+
+function updateAutoRefreshToggle() {
+    const knob = document.getElementById('auto-refresh-knob');
+    const switchElement = knob.parentElement;
+    
+    if (autoRefreshEnabled) {
+        switchElement.classList.add('active');
+    } else {
+        switchElement.classList.remove('active');
+    }
+}
 
 // ===================== 图片处理 =====================
 function parseImageData(imgArray) {
-    // 将 [pid, filename] 转换为 {pid, url} 对象
     return {
         pid: imgArray[0],
-        url: BASE_URL + imgArray[1] // 自动拼接完整URL
+        url: BASE_URL + imgArray[1]
     };
 }
 
 // ===================== 核心功能 =====================
 function loadRandomImage() {
-    // 清除现有计时器
     clearTimeout(inactivityTimer);
     clearInterval(countdownInterval);
     
     const imgEl = document.getElementById('random-image');
     const progressBar = document.getElementById('progress-bar');
     
-    // 显示加载状态
     imgEl.style.opacity = '0.5';
     progressBar.style.width = '0%';
     isImageLoading = true;
     document.getElementById('auto-switch-info').textContent = '图片加载中...';
     
-    // 获取新图片（优先使用预加载的nextImage）
     currentImage = nextImage || getRandomImage(currentImage?.pid);
     
-    // 如果没有可用图片
     if (!currentImage) {
         document.getElementById('pid-display').textContent = '没有可用的图片';
         isImageLoading = false;
         return;
     }
     
-    // 预加载下一张
     nextImage = getRandomImage(currentImage.pid);
     
-    // 加载图片
     const img = new Image();
     img.onload = function() {
         imgEl.src = this.src;
@@ -64,8 +123,9 @@ function loadRandomImage() {
         document.getElementById('pid-display').textContent = `PID: ${currentImage.pid}`;
         isImageLoading = false;
         
-        // 重置无操作计时器
-        resetInactivityTimer();
+        if (autoRefreshEnabled) {
+            resetInactivityTimer();
+        }
     };
     
     img.onerror = function() {
@@ -81,7 +141,6 @@ function loadRandomImage() {
 function getRandomImage(excludePid) {
     if (!imageData || imageData.length === 0) return null;
     
-    // 过滤可用图片
     const available = excludePid 
         ? imageData.filter(img => img[0] !== excludePid)
         : imageData;
@@ -93,20 +152,11 @@ function getRandomImage(excludePid) {
 
 // ===================== 自动切换系统 =====================
 function resetInactivityTimer() {
-    // 如果图片正在加载，不重置计时器
-    if (isImageLoading) return;
+    if (isImageLoading || !autoRefreshEnabled) return;
     
-    // 清除现有计时器
-    clearTimeout(inactivityTimer);
-    clearInterval(countdownInterval);
-    
-    // 记录活动时间
     lastActivityTime = Date.now();
-    
-    // 启动倒计时显示
     startCountdown();
     
-    // 设置无操作检测
     inactivityTimer = setTimeout(() => {
         if (nextImage) loadRandomImage();
     }, INACTIVITY_INTERVAL);
@@ -116,15 +166,11 @@ function startCountdown() {
     clearInterval(countdownInterval);
     const countdownEl = document.getElementById('auto-switch-info');
     
-    // 立即更新显示
     updateDisplay();
-    
-    // 每秒更新倒计时
     countdownInterval = setInterval(updateDisplay, 1000);
     
     function updateDisplay() {
-        // 如果图片正在加载，不更新倒计时
-        if (isImageLoading) return;
+        if (isImageLoading || !autoRefreshEnabled) return;
         
         const remaining = Math.max(0, INACTIVITY_INTERVAL - (Date.now() - lastActivityTime));
         countdownEl.textContent = `${Math.ceil(remaining/1000)}秒后自动切换`;
@@ -146,7 +192,6 @@ function setupTouchEvents() {
         imgEl.style.transition = 'none';
         resetInactivityTimer();
         
-        // 设置长按计时器
         isLongPress = false;
         longPressTimer = setTimeout(function() {
             isLongPress = true;
@@ -157,7 +202,6 @@ function setupTouchEvents() {
     container.addEventListener('touchmove', function(e) {
         if (!isSwiping) return;
         
-        // 如果已经触发了长按，则取消滑动
         if (isLongPress) {
             isSwiping = false;
             return;
@@ -167,7 +211,6 @@ function setupTouchEvents() {
         imgEl.style.transform = `translateX(${diffX}px)`;
         resetInactivityTimer();
         
-        // 如果滑动距离超过一定值，取消长按
         if (Math.abs(diffX) > 30) {
             clearTimeout(longPressTimer);
         }
@@ -178,10 +221,8 @@ function setupTouchEvents() {
         isSwiping = false;
         imgEl.style.transition = 'transform 0.4s cubic-bezier(0.22, 1, 0.36, 1)';
         
-        // 清除长按计时器
         clearTimeout(longPressTimer);
         
-        // 如果已经触发了长按，则不再处理滑动
         if (isLongPress) {
             isLongPress = false;
             imgEl.style.transform = 'translateX(0)';
@@ -196,7 +237,6 @@ function setupTouchEvents() {
         resetInactivityTimer();
     }, { passive: true });
     
-    // 双击放大图片
     imgEl.addEventListener('dblclick', function() {
         zoomImage();
     });
@@ -208,24 +248,17 @@ function showSaveAnimation() {
     const success = document.getElementById('save-success');
     const message = document.getElementById('save-message');
     
-    // 显示保存动画
     overlay.classList.add('active');
     progress.style.display = 'block';
     success.classList.remove('active');
     message.textContent = '下载图片中...';
     
-    // 模拟保存过程
     setTimeout(() => {
-        // 隐藏进度条，显示成功图标
         progress.style.display = 'none';
         success.classList.add('active');
-        
-        // 实际保存图片
         saveCurrentImage();
-        
         message.textContent = '下载成功！';
         
-        // 2秒后隐藏覆盖层
         setTimeout(() => {
             overlay.classList.remove('active');
         }, 2000);
@@ -235,17 +268,13 @@ function showSaveAnimation() {
 function saveCurrentImage() {
     if (!currentImage) return;
     
-    // 创建下载链接
     const link = document.createElement('a');
     link.href = currentImage.url;
     link.download = `Pixiv_${currentImage.pid}.jpg`;
     
-    // 处理iOS设备的特殊情况
     if (/(iPad|iPhone|iPod)/g.test(navigator.userAgent)) {
-        // iOS设备需要在新窗口打开
         window.open(currentImage.url, '_blank');
     } else {
-        // 其他设备直接触发下载
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -260,12 +289,10 @@ function zoomImage() {
     const zoomContainer = document.createElement('div');
     zoomContainer.className = 'image-zoom';
     
-    // 点击任意处关闭
     zoomContainer.onclick = function(e) {
-        // 只有当点击的不是缩放按钮时才关闭
         if (!e.target.classList.contains('zoom-btn')) {
             document.body.removeChild(zoomContainer);
-            currentScale = 1; // 重置缩放比例
+            currentScale = 1;
         }
     };
     
@@ -273,7 +300,6 @@ function zoomImage() {
     zoomedImage.src = currentImage.url;
     zoomedImage.style.transform = `scale(${currentScale})`;
     
-    // 添加缩放控制按钮
     const zoomControls = document.createElement('div');
     zoomControls.className = 'zoom-controls';
     
@@ -308,7 +334,6 @@ function zoomImage() {
     zoomControls.appendChild(zoomOutBtn);
     zoomControls.appendChild(resetBtn);
     
-    // 添加双指缩放支持
     let initialDistance = null;
     zoomedImage.addEventListener('touchstart', function(e) {
         if (e.touches.length === 2) {
@@ -337,7 +362,6 @@ function zoomImage() {
         }
     }, { passive: false });
     
-    // 防止点击图片本身触发关闭
     zoomedImage.onclick = function(e) {
         e.stopPropagation();
     };
@@ -350,23 +374,24 @@ function zoomImage() {
 }
 
 // ===================== 辅助功能 =====================
-function toggleDarkMode() {
-    isDarkMode = !isDarkMode;
-    localStorage.setItem('darkMode', isDarkMode);
-    updateDarkMode();
-    resetInactivityTimer();
-}
-
 function updateDarkMode() {
-    const toggleBtn = document.querySelector('.dark-mode-toggle');
+    const darkModeText = document.getElementById('dark-mode-text');
+    const darkModeSwitch = document.querySelector('.menu-item:first-child .toggle-switch');
+    
     if (isDarkMode) {
         document.documentElement.style.setProperty('--bg-color', '#1A1A1A');
         document.documentElement.style.setProperty('--card-color', '#2D2D2D');
-        toggleBtn.textContent = '🌙';
+        document.documentElement.style.setProperty('--text-color', '#EEE');
+        document.documentElement.style.setProperty('--menu-bg-color', '#2D2D2D');
+        darkModeText.textContent = '明亮模式';
+        darkModeSwitch.classList.add('active');
     } else {
         document.documentElement.style.setProperty('--bg-color', '#f5f5f5');
         document.documentElement.style.setProperty('--card-color', 'white');
-        toggleBtn.textContent = '☀️';
+        document.documentElement.style.setProperty('--text-color', '#333');
+        document.documentElement.style.setProperty('--menu-bg-color', 'white');
+        darkModeText.textContent = '暗黑模式';
+        darkModeSwitch.classList.remove('active');
     }
 }
 
@@ -376,23 +401,3 @@ function setupActivityListeners() {
         document.addEventListener(event, resetInactivityTimer, { passive: true });
     });
 }
-
-// ===================== 初始化 =====================
-document.addEventListener('DOMContentLoaded', function() {
-    // 检查是否加载了imageData
-    if (typeof imageData === 'undefined' || imageData.length === 0) {
-        document.getElementById('pid-display').textContent = '没有可用的图片数据';
-        return;
-    }
-    
-    // 检查本地存储的暗黑模式设置
-    const savedDarkMode = localStorage.getItem('darkMode');
-    if (savedDarkMode !== null) {
-        isDarkMode = savedDarkMode === 'true';
-    }
-    
-    updateDarkMode();
-    setupTouchEvents();
-    setupActivityListeners();
-    loadRandomImage();
-});
