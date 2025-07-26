@@ -1,6 +1,6 @@
 // ===================== 配置 =====================
 const BASE_URL = "https://i.pixiv.re/img-original/img/";
-const INACTIVITY_INTERVAL = 15000; // 默认15秒自动刷新
+const AUTO_REFRESH_INTERVAL = 15000; // 15秒自动刷新
 
 // ===================== 状态管理 =====================
 let currentImage = null;
@@ -159,12 +159,17 @@ function resetInactivityTimer() {
     
     inactivityTimer = setTimeout(() => {
         if (nextImage) loadRandomImage();
-    }, INACTIVITY_INTERVAL);
+    }, AUTO_REFRESH_INTERVAL);
 }
 
 function startCountdown() {
     clearInterval(countdownInterval);
     const countdownEl = document.getElementById('auto-switch-info');
+    
+    if (!autoRefreshEnabled) {
+        countdownEl.textContent = '自动刷新已关闭';
+        return;
+    }
     
     updateDisplay();
     countdownInterval = setInterval(updateDisplay, 1000);
@@ -172,7 +177,7 @@ function startCountdown() {
     function updateDisplay() {
         if (isImageLoading || !autoRefreshEnabled) return;
         
-        const remaining = Math.max(0, INACTIVITY_INTERVAL - (Date.now() - lastActivityTime));
+        const remaining = Math.max(0, AUTO_REFRESH_INTERVAL - (Date.now() - lastActivityTime));
         countdownEl.textContent = `${Math.ceil(remaining/1000)}秒后自动切换`;
         
         if (remaining <= 0) {
