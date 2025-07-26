@@ -28,8 +28,25 @@
             <div class="save-message" id="save-message">保存中...</div>
         </div>
         
-        <div class="dark-mode-toggle" onclick="toggleDarkMode()">
-            ☀️
+        <div class="settings-toggle" onclick="toggleSettingsMenu()">
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+        </div>
+        
+        <div class="settings-menu" id="settings-menu">
+            <div class="menu-item" onclick="toggleDarkMode()">
+                <span id="dark-mode-text">暗黑模式</span>
+                <div class="toggle-switch">
+                    <div class="toggle-knob"></div>
+                </div>
+            </div>
+            <div class="menu-item" onclick="toggleAutoRefresh()">
+                <span>15秒自动刷新</span>
+                <div class="toggle-switch">
+                    <div class="toggle-knob" id="auto-refresh-knob"></div>
+                </div>
+            </div>
         </div>
     </div>
 
