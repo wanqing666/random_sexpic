@@ -17,6 +17,7 @@ let isImageLoading = false;
 let currentScale = 1;
 let zoomedImage = null;
 let autoRefreshEnabled = true;
+let favorites = JSON.parse(localStorage.getItem('favorites')) || [];
 
 // ===================== 初始化 =====================
 document.addEventListener('DOMContentLoaded', function() {
@@ -48,6 +49,132 @@ document.addEventListener('DOMContentLoaded', function() {
     setupActivityListeners();
     loadRandomImage();
 });
+
+// ===================== 收藏功能 =====================
+function addToFavorites() {
+    if (!currentImage) return;
+    
+    // 检查是否已收藏
+    const isAlreadyFavorited = favorites.some(fav => fav.pid === currentImage.pid);
+    
+    if (isAlreadyFavorited) {
+        showFeedback('这张图片已经在收藏夹中了！');
+        return;
+    }
+    
+    // 添加到收藏夹
+    favorites.push({
+        pid: currentImage.pid,
+        url: currentImage.url,
+        addedAt: new Date().toISOString()
+    });
+    
+    // 保存到本地存储
+    saveFavorites();
+    
+    // 显示反馈
+    showFeedback('已收藏！');
+    
+    // 关闭菜单
+    document.getElementById('settings-menu').classList.remove('active');
+}
+
+function showFavorites() {
+    const modal = document.getElementById('favorites-modal');
+    const list = document.getElementById('favorites-list');
+    
+    // 清空现有列表
+    list.innerHTML = '';
+    
+    // 如果没有收藏
+    if (favorites.length === 0) {
+        list.innerHTML = '<p style="text-align:center;color:#888;">收藏夹是空的</p>';
+        modal.style.display = 'flex';
+        return;
+    }
+    
+    // 添加收藏项（按最新到最旧排序）
+    favorites.slice().reverse().forEach((fav, index) => {
+        const item = document.createElement('div');
+        item.className = 'favorite-item';
+        
+        item.innerHTML = `
+            <img src="${fav.url}" alt="收藏的图片" onerror="this.src='data:image/svg+xml;charset=UTF-8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"60\" height=\"60\" viewBox=\"0 0 60 60\"><rect width=\"60\" height=\"60\" fill=\"%23eee\"/><text x=\"30\" y=\"30\" fill=\"%23000\" text-anchor=\"middle\" dominant-baseline=\"middle\">图片加载失败</text></svg>'">
+            <div class="favorite-item-info">
+                <p>PID: ${fav.pid}</p>
+                <small>${new Date(fav.addedAt).toLocaleString()}</small>
+            </div>
+            <div class="favorite-item-actions">
+                <button onclick="viewFavorite('${fav.pid}')">查看</button>
+                <button onclick="removeFavorite('${fav.pid}', event)">删除</button>
+            </div>
+        `;
+        
+        list.appendChild(item);
+    });
+    
+    modal.style.display = 'flex';
+    document.getElementById('settings-menu').classList.remove('active');
+}
+
+function closeFavorites() {
+    document.getElementById('favorites-modal').style.display = 'none';
+}
+
+function viewFavorite(pid) {
+    // 查找并显示收藏的图片
+    const favorite = favorites.find(fav => fav.pid === pid);
+    if (favorite) {
+        currentImage = favorite;
+        document.getElementById('random-image').src = favorite.url;
+        document.getElementById('pid-display').innerHTML = `PID: ${favorite.pid} <span style="color:red;margin-left:5px;">❤️</span>`;
+        closeFavorites();
+        
+        // 预加载下一张
+        nextImage = getRandomImage(currentImage.pid);
+    }
+}
+
+function removeFavorite(pid, event) {
+    event.stopPropagation();
+    if (confirm('确定要从收藏夹删除吗？')) {
+        favorites = favorites.filter(fav => fav.pid !== pid);
+        saveFavorites();
+        showFavorites(); // 刷新显示
+        
+        // 如果删除的是当前显示的图片，移除收藏标记
+        if (currentImage && currentImage.pid === pid) {
+            const pidDisplay = document.getElementById('pid-display');
+            if (pidDisplay.innerHTML.includes('❤️')) {
+                pidDisplay.textContent = `PID: ${pid}`;
+            }
+        }
+    }
+}
+
+function saveFavorites() {
+    localStorage.setItem('favorites', JSON.stringify(favorites));
+}
+
+function showFeedback(message) {
+    const feedback = document.createElement('div');
+    feedback.textContent = message;
+    feedback.style.position = 'fixed';
+    feedback.style.bottom = '100px';
+    feedback.style.left = '50%';
+    feedback.style.transform = 'translateX(-50%)';
+    feedback.style.background = 'var(--primary-color)';
+    feedback.style.color = 'white';
+    feedback.style.padding = '10px 20px';
+    feedback.style.borderRadius = '20px';
+    feedback.style.zIndex = '1000';
+    feedback.style.boxShadow = '0 2px 10px rgba(0,0,0,0.2)';
+    document.body.appendChild(feedback);
+    
+    setTimeout(() => {
+        document.body.removeChild(feedback);
+    }, 2000);
+}
 
 // ===================== 设置菜单功能 =====================
 function toggleSettingsMenu() {
@@ -141,7 +268,11 @@ function loadRandomImage() {
         imgEl.style.opacity = '1';
         progressBar.style.width = '100%';
         setTimeout(() => progressBar.style.width = '0%', 300);
-        document.getElementById('pid-display').textContent = `PID: ${currentImage.pid}`;
+        
+        // 检查是否已收藏
+        const isFavorited = favorites.some(fav => fav.pid === currentImage.pid);
+        document.getElementById('pid-display').innerHTML = `PID: ${currentImage.pid}${isFavorited ? ' <span style="color:red;margin-left:5px;">❤️</span>' : ''}`;
+        
         isImageLoading = false;
         
         // 只有自动刷新开启时才重置计时器
@@ -232,37 +363,71 @@ function startCountdown() {
 
 // ===================== 下载功能 =====================
 async function downloadFile(url, filename) {
-    // 方案A：直接创建 <a> 触发下载（适用于同源或支持 download 的跨域）
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-
-    // 方案B：如果方案A失效（跨域问题），改用 fetch + Blob（需CORS支持）
+    // 方案A：尝试直接下载（同源或配置了CORS的跨域资源）
     try {
-        const response = await fetch(url, { mode: 'cors' });
-        if (!response.ok) throw new Error('Network response was not ok');
-        const blob = await response.blob();
-        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
         
-        // 重新创建链接确保点击有效
-        const downloadLink = document.createElement('a');
-        downloadLink.href = blobUrl;
-        downloadLink.download = filename;
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        document.body.removeChild(downloadLink);
+        // 检查是否真的下载了（通过超时判断）
+        await new Promise(resolve => setTimeout(resolve, 300));
         
-        // 释放内存
-        setTimeout(() => {
-            URL.revokeObjectURL(blobUrl);
-        }, 100);
-    } catch (error) {
-        console.error("下载失败:", error);
-        // 降级方案：新标签页打开
-        window.open(url, "_blank");
+        // 如果仍然停留在页面，说明方案A失败
+        document.body.removeChild(a);
+        throw new Error('直接下载失败');
+    } 
+    catch (error) {
+        // 方案B：使用fetch + Blob（需要服务器配置CORS）
+        try {
+            const response = await fetch(url, {
+                mode: 'cors',
+                credentials: 'omit'
+            });
+            
+            if (!response.ok) throw new Error('网络响应异常');
+            
+            const blob = await response.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = filename;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            
+            // 清理
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(blobUrl);
+            }, 100);
+            
+        } catch (fetchError) {
+            console.error('下载失败:', fetchError);
+            
+            // 方案C：显示用户提示
+            const shouldDownload = confirm('无法自动下载，是否在新窗口打开并手动保存？');
+            if (shouldDownload) {
+                // 新窗口打开+下载提示
+                const newWindow = window.open('', '_blank');
+                newWindow.document.write(`
+                    <!DOCTYPE html>
+                    <html>
+                        <head>
+                            <title>下载提示</title>
+                            <meta http-equiv="refresh" content="0;url=${url}">
+                        </head>
+                        <body>
+                            <p>如果下载没有自动开始，请<a href="${url}" download="${filename}">点击这里</a></p>
+                            <p>或者右键图片选择"另存为"</p>
+                        </body>
+                    </html>
+                `);
+            }
+        }
     }
 }
 
