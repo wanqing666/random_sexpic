@@ -47,6 +47,22 @@
                     <div class="toggle-knob" id="auto-refresh-knob"></div>
                 </div>
             </div>
+            <div class="menu-item" onclick="addToFavorites()">
+                <span>收藏当前图片</span>
+                <div class="favorite-icon">❤️</div>
+            </div>
+            <div class="menu-item" onclick="showFavorites()">
+                <span>查看收藏夹</span>
+                <div class="favorite-icon">📁</div>
+            </div>
+        </div>
+        
+        <div class="favorites-modal" id="favorites-modal">
+            <div class="favorites-content">
+                <h3>我的收藏夹</h3>
+                <div class="favorites-list" id="favorites-list"></div>
+                <button class="btn" onclick="closeFavorites()">关闭</button>
+            </div>
         </div>
     </div>
 
