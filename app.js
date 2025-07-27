@@ -230,6 +230,54 @@ function startCountdown() {
     }
 }
 
+// ===================== 下载功能 =====================
+async function downloadFile(url, filename) {
+    // 方案A：直接创建 <a> 触发下载（适用于同源或支持 download 的跨域）
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    // 方案B：如果方案A失效（跨域问题），改用 fetch + Blob（需CORS支持）
+    try {
+        const response = await fetch(url, { mode: 'cors' });
+        if (!response.ok) throw new Error('Network response was not ok');
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        
+        // 重新创建链接确保点击有效
+        const downloadLink = document.createElement('a');
+        downloadLink.href = blobUrl;
+        downloadLink.download = filename;
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+        
+        // 释放内存
+        setTimeout(() => {
+            URL.revokeObjectURL(blobUrl);
+        }, 100);
+    } catch (error) {
+        console.error("下载失败:", error);
+        // 降级方案：新标签页打开
+        window.open(url, "_blank");
+    }
+}
+
+function saveCurrentImage() {
+    if (!currentImage) return;
+    
+    const filename = `Pixiv_${currentImage.pid}.jpg`;
+    downloadFile(currentImage.url, filename);
+    
+    // 只有自动刷新开启时才重置计时器
+    if (autoRefreshEnabled) {
+        resetInactivityTimer();
+    }
+}
+
 // ===================== 交互功能 =====================
 function setupTouchEvents() {
     const container = document.getElementById('image-container');
@@ -332,31 +380,6 @@ function showSaveAnimation() {
             overlay.classList.remove('active');
         }, 2000);
     }, 1000);
-}
-
-function saveCurrentImage() {
-    if (!currentImage) return;
-    
-    // 创建下载链接
-    const link = document.createElement('a');
-    link.href = currentImage.url;
-    link.download = `Pixiv_${currentImage.pid}.jpg`;
-    
-    // 处理iOS设备的特殊情况
-    if (/(iPad|iPhone|iPod)/g.test(navigator.userAgent)) {
-        // iOS设备需要在新窗口打开
-        window.open(currentImage.url, '_blank');
-    } else {
-        // 其他设备直接触发下载
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    }
-    
-    // 只有自动刷新开启时才重置计时器
-    if (autoRefreshEnabled) {
-        resetInactivityTimer();
-    }
 }
 
 function zoomImage() {
